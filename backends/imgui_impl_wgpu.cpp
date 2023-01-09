@@ -4,7 +4,7 @@
 
 // Implemented features:
 //  [X] Renderer: User texture binding. Use 'WGPUTextureView' as ImTextureID. Read the FAQ about ImTextureID!
-//  [X] Renderer: Support for large meshes (64k+ vertices) with 16-bit indices.
+//  [X] Renderer: Large meshes support (64k+ vertices) with 16-bit indices.
 
 // You can use unmodified imgui_impl_* files in your project. See examples/ folder for examples of using this.
 // Prefer including the entire imgui/ repository into your project (either as a copy or as a submodule), and only build the backends you need.
@@ -13,6 +13,7 @@
 
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
+//  2022-11-24: Fixed validation error with default depth buffer settings.
 //  2022-11-10: Fixed rendering when a depth buffer is enabled. Added 'WGPUTextureFormat depth_format' parameter to ImGui_ImplWGPU_Init().
 //  2022-10-11: Using 'nullptr' instead of 'NULL' as per our switch to C++11.
 //  2021-11-29: Passing explicit buffer sizes to wgpuRenderPassEncoderSetVertexBuffer()/wgpuRenderPassEncoderSetIndexBuffer().
@@ -606,6 +607,9 @@ bool ImGui_ImplWGPU_CreateDeviceObjects()
     WGPUDepthStencilState depth_stencil_state = {};
     depth_stencil_state.format = g_depthStencilFormat;
     depth_stencil_state.depthWriteEnabled = false;
+    depth_stencil_state.depthCompare = WGPUCompareFunction_Always;
+    depth_stencil_state.stencilFront.compare = WGPUCompareFunction_Always;
+    depth_stencil_state.stencilBack.compare = WGPUCompareFunction_Always;
 
     // Configure disabled depth-stencil state
     graphics_pipeline_desc.depthStencil = g_depthStencilFormat == WGPUTextureFormat_Undefined  ? nullptr :  &depth_stencil_state;
@@ -653,7 +657,7 @@ void ImGui_ImplWGPU_InvalidateDeviceObjects()
     SafeRelease(g_resources);
 
     ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->SetTexID(nullptr); // We copied g_pFontTextureView to io.Fonts->TexID so let's clear that as well.
+    io.Fonts->SetTexID(0); // We copied g_pFontTextureView to io.Fonts->TexID so let's clear that as well.
 
     for (unsigned int i = 0; i < g_numFramesInFlight; i++)
         SafeRelease(g_pFrameResources[i]);
