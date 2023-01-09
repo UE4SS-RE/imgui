@@ -8,6 +8,9 @@
 #include <d3d9.h>
 #include <tchar.h>
 
+#include "GUI/Interface.h"
+#include "GUI/SodiumLib.h"
+
 // Data
 static LPDIRECT3D9              g_pD3D = NULL;
 static LPDIRECT3DDEVICE9        g_pd3dDevice = NULL;
@@ -23,10 +26,21 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 int main(int, char**)
 {
     // Create application window
-    //ImGui_ImplWin32_EnableDpiAwareness();
-    WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, L"ImGui Example", NULL };
-    ::RegisterClassExW(&wc);
-    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui DirectX9 Example", WS_OVERLAPPEDWINDOW, 100, 100, 1280, 800, NULL, NULL, wc.hInstance, NULL);
+    ImGui_ImplWin32_EnableDpiAwareness();
+    SodiumLib::GetSodium()->InitSodium();
+    SodiumLib::GetSodium()->setupKeys();
+    SodiumLib::GetSodium()->setupNonce();
+    printf("sodium keys made\n");
+    RECT rc;
+    GetWindowRect(GetDesktopWindow(), &rc);
+    rc.left = 0;
+    rc.top = 0;
+    rc.right = GetSystemMetrics(SM_CXMAXTRACK);    //If you have more than one monitor, you will get the total width
+    rc.bottom = GetSystemMetrics(SM_CYMAXTRACK);
+    WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, /*LoadCursor(NULL, IDC_ARROW)*/ NULL, NULL, NULL, _T("1337 injector"), NULL };
+    ::RegisterClassEx(&wc);
+    HWND hwnd = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED, _T("1337 injector"), NULL, WS_POPUP, 0, 0, rc.right+500, rc.bottom, NULL, NULL, wc.hInstance, NULL);
+    SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, ULW_COLORKEY);
 
     // Initialize Direct3D
     if (!CreateDeviceD3D(hwnd))
@@ -44,17 +58,30 @@ int main(int, char**)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+    //io.ConfigViewportsNoAutoMerge = true;
+    //io.ConfigViewportsNoTaskBarIcon = true;
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
     //ImGui::StyleColorsLight();
 
+    // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+    ImGuiStyle& style = ImGui::GetStyle();
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+
     // Setup Platform/Renderer backends
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX9_Init(g_pd3dDevice);
 
+    Interface::GetInterface()->SetupFonts();
     // Load Fonts
     // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
     // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
@@ -92,12 +119,12 @@ int main(int, char**)
         }
         if (done)
             break;
-
+        ShowWindow( GetConsoleWindow(), SW_HIDE );
         // Start the Dear ImGui frame
         ImGui_ImplDX9_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
-
+        Interface::GetInterface()->DrawInterface();
         // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
         if (show_demo_window)
             ImGui::ShowDemoWindow(&show_demo_window);
@@ -140,14 +167,21 @@ int main(int, char**)
         g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
         g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
         g_pd3dDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
-        D3DCOLOR clear_col_dx = D3DCOLOR_RGBA((int)(clear_color.x*clear_color.w*255.0f), (int)(clear_color.y*clear_color.w*255.0f), (int)(clear_color.z*clear_color.w*255.0f), (int)(clear_color.w*255.0f));
-        g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
+        g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0x00000000, 1.0f, 0);
         if (g_pd3dDevice->BeginScene() >= 0)
         {
             ImGui::Render();
             ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
             g_pd3dDevice->EndScene();
         }
+
+        // Update and Render additional Platform Windows
+        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+        {
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+        }
+
         HRESULT result = g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
         // Handle loss of D3D9 device
@@ -203,6 +237,10 @@ void ResetDevice()
     ImGui_ImplDX9_CreateDeviceObjects();
 }
 
+#ifndef WM_DPICHANGED
+#define WM_DPICHANGED 0x02E0 // From Windows SDK 8.1+ headers
+#endif
+
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -233,6 +271,15 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY:
         ::PostQuitMessage(0);
         return 0;
+    case WM_DPICHANGED:
+        if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_DpiEnableScaleViewports)
+        {
+            //const int dpi = HIWORD(wParam);
+            //printf("WM_DPICHANGED to %d (%.0f%%)\n", dpi, (float)dpi / 96.0f * 100.0f);
+            const RECT* suggested_rect = (RECT*)lParam;
+            ::SetWindowPos(hWnd, NULL, suggested_rect->left, suggested_rect->top, suggested_rect->right - suggested_rect->left, suggested_rect->bottom - suggested_rect->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        break;
     }
     return ::DefWindowProc(hWnd, msg, wParam, lParam);
 }
